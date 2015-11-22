@@ -1,0 +1,84 @@
+---
+title: "Human Activity Recognition"
+author: "Manuel A. Vázquez"
+date: "22 de noviembre de 2015"
+output: pdf_document
+---
+
+The goal of this work is to predict the kind of activity being performed by a person from measurements obtained by wearable devices. More information is provided in <http://groupware.les.inf.puc-rio.br/har>.
+
+The R libraries used in this analysis are loaded.
+
+```{r,echo=FALSE}
+library(dplyr)
+library(caret)
+```
+
+# Data loading
+
+```{r}
+training <- read.csv('pml-training.csv')
+testing <- read.csv('pml-testing.csv')
+```
+
+The first variable in the data (both training and testing) is just the number of rows, so it does not serve any purpose.
+
+```{r}
+training <- training %>% select(-X)
+testing <- testing %>% select(-X)
+```
+
+# Data partitioning
+
+The given training set is, in turn, split into *training* and *test* sets.
+
+```{r}
+inTrain = createDataPartition(training$classe, p = 0.7,list=FALSE)
+my.training <- training[inTrain,]
+my.testing <- training[-inTrain,]
+```
+
+# Data preprocessing
+
+Some variables are almost constant across all the observations, and hence are not useful for discriminating among classes. We identify them and remove them.
+
+```{r}
+near.zero <- nearZeroVar(my.training,saveMetrics=TRUE)
+near.zero.vars <- rownames(near.zero)[near.zero$nzv]
+my.training <- my.training %>% dplyr::select(-one_of(near.zero.vars))
+my.testing <- my.testing %>% dplyr::select(-one_of(near.zero.vars))
+```
+
+Variables with majority of *NA*s are not of interest.
+
+```{r}
+na.percentages <- sapply(my.training, function(x) mean(is.na(x)))
+near.all.na.vars <- attr(which(na.percentages > 0.95),"names")
+my.training <- my.training %>% dplyr::select(-one_of(near.all.na.vars))
+my.testing <- my.testing %>% dplyr::select(-one_of(near.all.na.vars))
+```
+
+# Exploratory data analysis
+
+Three potential useful features are explored visually.
+
+```{r,cache=TRUE}
+featurePlot(x = my.training[,c("roll_belt","pitch_belt","yaw_belt")],y = my.training$classe,plot = "pairs")
+```
+
+The clouds of points seem *separable*, but not linearly.
+
+# Machine learning
+
+*Random forests* is a powerful non-linear method, which might work with this dataset. We are going to train our model using cross-validation.
+
+```{r,cache=TRUE}
+train.ctrl <- trainControl(method="cv", allowParallel=TRUE)
+modFit <- train(x = my.training[,c("roll_belt","pitch_belt","yaw_belt")],y = my.training$classe,method="rf",trControl=train.ctrl)
+```
+
+A rough estimation of the accuracy of our predictor can be obtained as
+
+```{r,cache=TRUE}
+mean(predict(modFit,my.testing[,1:57]) == my.testing$classe)
+```
